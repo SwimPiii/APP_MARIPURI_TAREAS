@@ -94,22 +94,34 @@ function setupEventListeners() {
 }
 
 // ==================== GOOGLE DRIVE API ====================
+let gapiLoadedFlag = false;
+
+// Callback cuando gapi se carga
+function gapiLoaded() {
+    gapiLoadedFlag = true;
+    console.log('GAPI cargado correctamente');
+}
+
 function loadGoogleAPI() {
     // Verificar si drive-config.js está disponible
     if (typeof initGoogleDriveAPI === 'function') {
         console.log('Inicializando Google Drive API...');
         // Esperar a que gapi esté cargado
-        if (typeof gapi !== 'undefined') {
-            initGoogleDriveAPI();
-        } else {
-            // Esperar a que el script de gapi se cargue
-            const checkGapi = setInterval(() => {
-                if (typeof gapi !== 'undefined') {
-                    clearInterval(checkGapi);
-                    initGoogleDriveAPI();
-                }
-            }, 100);
-        }
+        const checkGapi = setInterval(() => {
+            if (gapiLoadedFlag && typeof gapi !== 'undefined') {
+                clearInterval(checkGapi);
+                initGoogleDriveAPI();
+            }
+        }, 100);
+        // Timeout de 10 segundos
+        setTimeout(() => {
+            clearInterval(checkGapi);
+            if (!gapiInited) {
+                console.error('Timeout esperando GAPI, usando modo local');
+                gapiInited = true;
+                loadPasswordFromLocalStorage();
+            }
+        }, 10000);
     } else {
         console.log('Google Drive API no configurada, usando modo local');
         gapiInited = true;
