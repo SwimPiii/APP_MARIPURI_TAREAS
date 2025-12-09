@@ -94,10 +94,28 @@ async function prepareDrive() {
 }
 
 // Iniciar sesión (muestra popup)
-function driveSignIn() {
+async function driveSignIn() {
+    // Si no está listo, intentar preparar ahora
     if (!driveState.tokenClient) {
-        alert('Cargando Google Drive... espera un momento y vuelve a intentarlo');
-        return Promise.reject(new Error('Token client no listo'));
+        try {
+            await prepareDrive();
+        } catch (e) {
+            console.error('Error preparando Drive:', e);
+        }
+    }
+    
+    // Si aún no está listo, crear directamente
+    if (!driveState.tokenClient) {
+        try {
+            await waitForGIS();
+            driveState.tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CONFIG.CLIENT_ID,
+                scope: GOOGLE_CONFIG.SCOPES,
+                callback: '',
+            });
+        } catch (e) {
+            return Promise.reject(new Error('No se pudo inicializar Google Drive: ' + e.message));
+        }
     }
     
     return new Promise((resolve, reject) => {
