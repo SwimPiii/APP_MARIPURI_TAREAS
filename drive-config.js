@@ -18,6 +18,12 @@ const GOOGLE_CONFIG = {
 // ==================== FUNCIONES DE INICIALIZACIÓN ====================
 
 function initGoogleDriveAPI() {
+    if (!gapi || !gapi.load) {
+        console.error('GAPI no está completamente cargado');
+        gapiInited = true;
+        loadPasswordFromLocalStorage();
+        return;
+    }
     gapi.load('client:auth2', initClient);
 }
 
