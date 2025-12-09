@@ -1,0 +1,40 @@
+# Archivos de configuración sensibles
+drive-config.js
+client_secrets.json
+config.js
+
+# Pero SI incluir los archivos de ejemplo
+!drive-config.EXAMPLE.js
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Archivos temporales
+*.tmp
+*.temp
+~*
+
+# Node modules (si usas npm)
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+dist/
+build/
