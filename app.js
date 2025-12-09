@@ -95,10 +95,21 @@ function setupEventListeners() {
 
 // ==================== GOOGLE DRIVE API ====================
 function loadGoogleAPI() {
-    // Inicializar Google Drive API
+    // Verificar si drive-config.js está disponible
     if (typeof initGoogleDriveAPI === 'function') {
         console.log('Inicializando Google Drive API...');
-        initGoogleDriveAPI();
+        // Esperar a que gapi esté cargado
+        if (typeof gapi !== 'undefined') {
+            initGoogleDriveAPI();
+        } else {
+            // Esperar a que el script de gapi se cargue
+            const checkGapi = setInterval(() => {
+                if (typeof gapi !== 'undefined') {
+                    clearInterval(checkGapi);
+                    initGoogleDriveAPI();
+                }
+            }, 100);
+        }
     } else {
         console.log('Google Drive API no configurada, usando modo local');
         gapiInited = true;
