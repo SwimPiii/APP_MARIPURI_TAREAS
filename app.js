@@ -81,7 +81,6 @@ function setupEventListeners() {
     document.getElementById('nextWeek').addEventListener('click', () => navigateWeek(1));
     
     // Botones de administración
-    document.getElementById('driveConnectBtn').addEventListener('click', handleDriveConnect);
     document.getElementById('addBonusBtn').addEventListener('click', addBonus);
     document.getElementById('removeBonusBtn').addEventListener('click', removeBonus);
     document.getElementById('clearWeekBtn').addEventListener('click', clearWeek);
@@ -224,7 +223,21 @@ async function handleLogin() {
         
         // Actualizar UI
         updateWelcomeMessage();
-        await loadDatabaseFromDrive();
+        
+        // Conectar con Google Drive automáticamente
+        try {
+            if (typeof driveSignIn === 'function' && !driveState.signedIn) {
+                await driveSignIn();
+                console.log('Datos cargados desde Drive');
+            } else {
+                // Si ya está conectado o Drive no disponible, cargar de localStorage
+                await loadDatabaseFromDrive();
+            }
+        } catch (error) {
+            console.error('Error conectando con Drive, usando localStorage:', error);
+            await loadDatabaseFromDrive();
+        }
+        
         renderCalendar();
         
         // Mostrar controles de admin si es super usuario
@@ -237,7 +250,20 @@ async function handleLogin() {
     }
 }
 
-function handleLogout() {
+async function handleLogout() {
+    // Guardar datos en Drive antes de cerrar sesión
+    try {
+        if (typeof saveDatabaseToDriveReal === 'function' && driveState.signedIn) {
+            await saveDatabaseToDriveReal();
+            if (typeof savePiggyBankToDrive === 'function') {
+                await savePiggyBankToDrive();
+            }
+            console.log('Datos guardados en Drive al cerrar sesión');
+        }
+    } catch (error) {
+        console.error('Error guardando en Drive al cerrar sesión:', error);
+    }
+    
     currentUser = null;
     document.getElementById('mainScreen').classList.remove('active');
     document.getElementById('loginScreen').classList.add('active');

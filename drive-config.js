@@ -140,7 +140,11 @@ async function driveSignIn() {
         };
         
         try {
-            driveState.tokenClient.requestAccessToken({ prompt: 'consent' });
+            // Usar 'consent' solo la primera vez, después intentará sin popup
+            const hasToken = gapi.client.getToken();
+            driveState.tokenClient.requestAccessToken({ 
+                prompt: hasToken ? '' : 'consent' 
+            });
         } catch (e) {
             reject(e);
         }
