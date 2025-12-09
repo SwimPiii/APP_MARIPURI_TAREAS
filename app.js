@@ -224,21 +224,25 @@ async function handleLogin() {
         // Actualizar UI
         updateWelcomeMessage();
         
-        // Conectar con Google Drive automáticamente
-        try {
-            if (typeof driveSignIn === 'function' && !driveState.signedIn) {
-                await driveSignIn();
-                console.log('Datos cargados desde Drive');
-            } else {
-                // Si ya está conectado o Drive no disponible, cargar de localStorage
-                await loadDatabaseFromDrive();
-            }
-        } catch (error) {
-            console.error('Error conectando con Drive, usando localStorage:', error);
-            await loadDatabaseFromDrive();
-        }
-        
+        // Cargar datos (primero de localStorage, luego intentar Drive)
+        loadLocalDatabase();
         renderCalendar();
+        
+        // Intentar conectar con Google Drive en segundo plano
+        setTimeout(async () => {
+            try {
+                if (typeof driveSignIn === 'function') {
+                    const isDriveConnected = typeof driveState !== 'undefined' && driveState.signedIn;
+                    if (!isDriveConnected) {
+                        await driveSignIn();
+                        // Recargar datos después de conectar
+                        renderCalendar();
+                    }
+                }
+            } catch (error) {
+                console.log('Drive no disponible, continuando con localStorage:', error);
+            }
+        }, 500);
         
         // Mostrar controles de admin si es super usuario
         if (currentUser === 'super_usuario') {
