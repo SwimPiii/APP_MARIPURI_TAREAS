@@ -81,6 +81,7 @@ function setupEventListeners() {
     document.getElementById('nextWeek').addEventListener('click', () => navigateWeek(1));
     
     // Botones de administración
+    document.getElementById('driveConnectBtn').addEventListener('click', handleDriveConnect);
     document.getElementById('addBonusBtn').addEventListener('click', addBonus);
     document.getElementById('removeBonusBtn').addEventListener('click', removeBonus);
     document.getElementById('clearWeekBtn').addEventListener('click', clearWeek);
@@ -94,31 +95,48 @@ function setupEventListeners() {
 }
 
 // ==================== GOOGLE DRIVE API ====================
-function loadGoogleAPI() {
-    // Verificar si drive-config.js está disponible
-    if (typeof initGoogleDriveAPI === 'function') {
-        console.log('Esperando Google Drive API...');
-        // Esperar a que gapi esté completamente cargado
-        let attempts = 0;
-        const maxAttempts = 50; // 5 segundos
-        const checkGapi = setInterval(() => {
-            attempts++;
-            if (typeof gapi !== 'undefined' && gapi !== null && typeof gapi.load === 'function') {
-                clearInterval(checkGapi);
-                console.log('Inicializando Google Drive API...');
-                initGoogleDriveAPI();
-            } else if (attempts >= maxAttempts) {
-                clearInterval(checkGapi);
-                console.error('Timeout esperando GAPI, usando modo local');
-                gapiInited = true;
-                loadPasswordFromLocalStorage();
-            }
-        }, 100);
-    } else {
-        console.log('Google Drive API no configurada, usando modo local');
-        gapiInited = true;
-        loadPasswordFromLocalStorage();
+async function handleDriveConnect() {
+    const btn = document.getElementById('driveConnectBtn');
+    
+    if (typeof driveSignIn !== 'function') {
+        alert('Google Drive no está disponible. Verifica la configuración.');
+        return;
     }
+    
+    try {
+        btn.textContent = '☁️ Conectando...';
+        btn.disabled = true;
+        
+        await driveSignIn();
+        
+        btn.textContent = '✅ Conectado a Drive';
+        btn.style.background = '#10b981';
+        
+        alert('¡Conectado a Google Drive! Tus datos se sincronizarán automáticamente.');
+    } catch (error) {
+        console.error('Error conectando con Drive:', error);
+        btn.textContent = '☁️ Conectar Google Drive';
+        btn.disabled = false;
+        alert('No se pudo conectar con Google Drive: ' + error.message);
+    }
+}
+
+function loadGoogleAPI() {
+    // Drive se prepara automáticamente en segundo plano
+    // Solo cargamos password local por ahora
+    loadPasswordFromLocalStorage();
+    
+    // Verificar si ya hay sesión activa (para reconexión automática)
+    setTimeout(() => {
+        if (typeof driveState !== 'undefined' && driveState.signedIn) {
+            console.log('Sesión de Drive activa');
+            const btn = document.getElementById('driveConnectBtn');
+            if (btn) {
+                btn.textContent = '✅ Conectado a Drive';
+                btn.style.background = '#10b981';
+            }
+        }
+    }, 2000);
 }
 
 function loadPasswordFromLocalStorage() {
@@ -132,11 +150,8 @@ function loadPasswordFromLocalStorage() {
 }
 
 async function loadPasswordFromDrive() {
-    if (typeof loadPasswordFromDriveReal === 'function') {
-        return await loadPasswordFromDriveReal();
-    } else {
-        return mariaPassword;
-    }
+    // Ya no se usa, la carga se hace desde drive-config.js
+    return mariaPassword;
 }
 
 async function savePasswordToDrive(password) {
@@ -149,14 +164,7 @@ async function savePasswordToDrive(password) {
 }
 
 async function loadDatabaseFromDrive() {
-    if (typeof loadDatabaseFromDriveReal === 'function') {
-        await loadDatabaseFromDriveReal();
-    } else {
-        const stored = localStorage.getItem('tasksDatabase');
-        if (stored) {
-            tasksDatabase = JSON.parse(stored);
-        }
-    }
+    // Ya no se usa, la carga se hace desde drive-config.js
 }
 
 async function saveDatabaseToDrive() {
@@ -704,7 +712,11 @@ function loadPiggyBank() {
 
 function savePiggyBank() {
     localStorage.setItem('piggyBank', piggyBank.toString());
-    // TODO: Guardar también en Drive cuando esté configurado
+    // Guardar también en Drive si está disponible
+    if (typeof savePiggyBankToDrive === 'function') {
+        piggyBankBalance = piggyBank; // Sincronizar variable global
+        savePiggyBankToDrive();
+    }
     updatePiggyBankDisplay();
 }
 

@@ -90,6 +90,7 @@
 
         <!-- Botones de Administración (solo Super Usuario) -->
         <div id="adminControls" class="admin-controls" style="display: none;">
+            <button id="driveConnectBtn" class="btn-admin btn-drive">☁️ Conectar Google Drive</button>
             <button id="fillWeekBtn" class="btn-admin btn-fill">📋 Rellenar Semana Automáticamente</button>
             <button id="addBonusBtn" class="btn-admin">➕ Añadir Bonificación</button>
             <button id="removeBonusBtn" class="btn-admin">➖ Quitar Bonificación</button>
@@ -128,8 +129,9 @@
     </div>
 
     <!-- Scripts -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="drive-config.js"></script>
     <script src="app.js"></script>
-    <script src="https://apis.google.com/js/api.js"></script>
 </body>
 </html>

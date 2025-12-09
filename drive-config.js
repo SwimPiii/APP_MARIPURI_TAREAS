@@ -1,216 +1,259 @@
-// ==================== CONFIGURACIÓN DE GOOGLE DRIVE ====================
-// Este archivo contiene las credenciales para conectar con Google Drive
-// INSTRUCCIONES: Completa estos valores con tus credenciales de Google Cloud
-
+// Configuración Google Drive con GIS (Google Identity Services)
 const GOOGLE_CONFIG = {
-    // Tu Client ID de Google Cloud Console
-    // Ejemplo: '123456789-abc123.apps.googleusercontent.com'
     CLIENT_ID: '375166697768-8rlhv12c3vuppu2m1tlk55kqdctatft5.apps.googleusercontent.com',
-    
-    // Tu API Key de Google Cloud Console
-    API_KEY: 'AIzaSyC1pl_XhhbES5JRy-mBWQVKLUbLVmJOUxQ',
-    
-    // No modificar estos valores
-    DISCOVERY_DOCS: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-    SCOPES: 'https://www.googleapis.com/auth/drive.file'
+    SCOPES: 'https://www.googleapis.com/auth/drive.file',
+    FOLDER_ID: '1e5ebZ1haq0AFua98XBSe9lmUfOwjyHLT',
+    PASSWORD_FILE: 'maria_password.txt',
+    DATABASE_FILE: 'tasks_database.json',
+    PIGGYBANK_FILE: 'piggy_bank.json'
 };
 
-// ==================== FUNCIONES DE INICIALIZACIÓN ====================
+const driveState = {
+    gapiLoaded: false,
+    gisLoaded: false,
+    clientInitialized: false,
+    signedIn: false,
+    passwordFileId: null,
+    databaseFileId: null,
+    piggybankFileId: null,
+    tokenClient: null
+};
 
-function initGoogleDriveAPI() {
-    if (!gapi || !gapi.load) {
-        console.error('GAPI no está completamente cargado');
-        gapiInited = true;
-        loadPasswordFromLocalStorage();
-        return;
-    }
-    gapi.load('client:auth2', initClient);
-}
-
-function initClient() {
-    gapi.client.init({
-        apiKey: GOOGLE_CONFIG.API_KEY,
-        clientId: GOOGLE_CONFIG.CLIENT_ID,
-        discoveryDocs: GOOGLE_CONFIG.DISCOVERY_DOCS,
-        scope: GOOGLE_CONFIG.SCOPES
-    }).then(() => {
-        console.log('Google Drive API inicializada correctamente');
-        gapiInited = true;
-        
-        // Escuchar cambios en el estado de autenticación
-        gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
-        
-        // Manejar el estado inicial de inicio de sesión
-        updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
-    }).catch((error) => {
-        console.error('Error al inicializar Google Drive API:', error);
-        alert('Error al conectar con Google Drive. Usando modo local.');
+// Esperar a que GIS se cargue
+async function waitForGIS(timeoutMs = 5000) {
+    const start = Date.now();
+    return new Promise((resolve, reject) => {
+        (function loop() {
+            if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+                return resolve(true);
+            }
+            if (Date.now() - start > timeoutMs) {
+                return reject(new Error('GIS no cargó'));
+            }
+            setTimeout(loop, 100);
+        })();
     });
 }
 
-function updateSigninStatus(isSignedIn) {
-    if (isSignedIn) {
-        console.log('Usuario autenticado en Google Drive');
-    } else {
-        // Iniciar sesión automáticamente
-        gapi.auth2.getAuthInstance().signIn();
-    }
+// Esperar a que GAPI se cargue
+async function waitForGAPI(timeoutMs = 5000) {
+    const start = Date.now();
+    return new Promise((resolve, reject) => {
+        (function loop() {
+            if (window.gapi && window.gapi.load) {
+                return resolve(true);
+            }
+            if (Date.now() - start > timeoutMs) {
+                return reject(new Error('GAPI no cargó'));
+            }
+            setTimeout(loop, 100);
+        })();
+    });
 }
 
-// ==================== FUNCIONES DE DRIVE COMPLETAS ====================
-
-async function loadPasswordFromDriveReal() {
-    if (!gapiInited) {
-        console.log('Drive API no iniciada, usando localStorage');
-        return loadPasswordFromLocalStorage();
-    }
+// Inicializar cliente de Google API
+async function initGapiClient() {
+    if (driveState.clientInitialized) return true;
     
-    try {
-        // Buscar archivo de contraseña
-        const response = await gapi.client.drive.files.list({
-            q: `name='${CONFIG.PASSWORD_FILE_NAME}' and '${CONFIG.DRIVE_FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id, name)',
-            spaces: 'drive'
+    await waitForGAPI();
+    
+    return new Promise((resolve, reject) => {
+        window.gapi.load('client', async () => {
+            try {
+                await window.gapi.client.init({
+                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                });
+                driveState.clientInitialized = true;
+                console.log('GAPI client inicializado');
+                resolve(true);
+            } catch (e) {
+                console.error('Error init gapi client', e);
+                reject(e);
+            }
         });
+    });
+}
+
+// Preparar Drive en segundo plano
+async function prepareDrive() {
+    try {
+        await initGapiClient();
+        await waitForGIS();
         
-        if (response.result.files && response.result.files.length > 0) {
-            const fileId = response.result.files[0].id;
-            
-            // Descargar contenido del archivo
-            const fileContent = await gapi.client.drive.files.get({
-                fileId: fileId,
-                alt: 'media'
+        if (!driveState.tokenClient) {
+            driveState.tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CONFIG.CLIENT_ID,
+                scope: GOOGLE_CONFIG.SCOPES,
+                callback: '',
             });
-            
-            const password = fileContent.body.trim();
-            console.log('Contraseña cargada desde Drive');
-            
-            // Guardar también en localStorage como backup
-            localStorage.setItem('mariaPassword', password);
-            
-            return password;
-        } else {
-            console.log('Archivo de contraseña no encontrado en Drive, creando uno nuevo...');
-            
-            // Crear archivo con contraseña por defecto
-            const defaultPassword = 'maria';
-            await savePasswordToDriveReal(defaultPassword);
-            return defaultPassword;
         }
-    } catch (error) {
-        console.error('Error al cargar contraseña desde Drive:', error);
-        console.log('Usando contraseña de localStorage');
-        return loadPasswordFromLocalStorage();
+        console.log('Drive preparado correctamente');
+    } catch (e) {
+        console.error('Error preparando Drive:', e);
     }
 }
 
-async function savePasswordToDriveReal(password) {
-    if (!gapiInited) {
-        console.log('Drive API no iniciada, usando localStorage');
-        localStorage.setItem('mariaPassword', password);
-        return;
+// Iniciar sesión (muestra popup)
+function driveSignIn() {
+    if (!driveState.tokenClient) {
+        alert('Cargando Google Drive... espera un momento y vuelve a intentarlo');
+        return Promise.reject(new Error('Token client no listo'));
     }
     
+    return new Promise((resolve, reject) => {
+        driveState.tokenClient.callback = async (resp) => {
+            try {
+                if (resp && resp.access_token) {
+                    await initGapiClient();
+                    window.gapi.client.setToken({ access_token: resp.access_token });
+                    driveState.signedIn = true;
+                    console.log('Sesión iniciada en Drive');
+                    
+                    // Cargar datos desde Drive
+                    await loadAllFromDrive();
+                    
+                    resolve(true);
+                } else {
+                    reject(new Error('No se obtuvo access_token'));
+                }
+            } catch (e) {
+                reject(e);
+            }
+        };
+        
+        try {
+            driveState.tokenClient.requestAccessToken({ prompt: 'consent' });
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+// Buscar o crear archivo en Drive
+async function findOrCreateFile(fileName, mimeType, content = '') {
     try {
-        const fileMetadata = {
-            name: CONFIG.PASSWORD_FILE_NAME,
-            mimeType: 'text/plain',
-            parents: [CONFIG.DRIVE_FOLDER_ID]
-        };
-        
-        const media = {
-            mimeType: 'text/plain',
-            body: password
-        };
-        
-        // Buscar si ya existe el archivo
+        // Buscar archivo existente
         const searchResponse = await gapi.client.drive.files.list({
-            q: `name='${CONFIG.PASSWORD_FILE_NAME}' and '${CONFIG.DRIVE_FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id)',
+            q: `name='${fileName}' and '${GOOGLE_CONFIG.FOLDER_ID}' in parents and trashed=false`,
+            fields: 'files(id, name)',
             spaces: 'drive'
         });
         
         if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-            // Actualizar archivo existente
-            const fileId = searchResponse.result.files[0].id;
-            
-            await gapi.client.request({
-                path: `/upload/drive/v3/files/${fileId}`,
-                method: 'PATCH',
-                params: { uploadType: 'media' },
-                body: password
-            });
-            
-            console.log('Contraseña actualizada en Drive');
-        } else {
-            // Crear nuevo archivo
-            const file = new Blob([password], { type: 'text/plain' });
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-            form.append('file', file);
-            
-            await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                method: 'POST',
-                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }),
-                body: form
-            });
-            
-            console.log('Contraseña creada en Drive');
+            return searchResponse.result.files[0].id;
         }
         
-        // Guardar también en localStorage
-        localStorage.setItem('mariaPassword', password);
+        // Crear nuevo archivo
+        const fileMetadata = {
+            name: fileName,
+            mimeType: mimeType,
+            parents: [GOOGLE_CONFIG.FOLDER_ID]
+        };
         
+        const file = new Blob([content], { type: mimeType });
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+        form.append('file', file);
+        
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: new Headers({ 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }),
+            body: form
+        });
+        
+        const result = await response.json();
+        return result.id;
     } catch (error) {
-        console.error('Error al guardar contraseña en Drive:', error);
-        localStorage.setItem('mariaPassword', password);
+        console.error('Error con archivo en Drive:', error);
+        throw error;
     }
 }
 
-async function loadDatabaseFromDriveReal() {
-    if (!gapiInited) {
-        console.log('Drive API no iniciada, usando localStorage');
-        loadLocalDatabase();
+// Leer contenido de archivo
+async function readFile(fileId) {
+    try {
+        const response = await gapi.client.drive.files.get({
+            fileId: fileId,
+            alt: 'media'
+        });
+        return response.body;
+    } catch (error) {
+        console.error('Error leyendo archivo:', error);
+        throw error;
+    }
+}
+
+// Actualizar contenido de archivo
+async function updateFile(fileId, content, mimeType) {
+    try {
+        await gapi.client.request({
+            path: `/upload/drive/v3/files/${fileId}`,
+            method: 'PATCH',
+            params: { uploadType: 'media' },
+            headers: { 'Content-Type': mimeType },
+            body: content
+        });
+    } catch (error) {
+        console.error('Error actualizando archivo:', error);
+        throw error;
+    }
+}
+
+// Cargar todos los datos desde Drive
+async function loadAllFromDrive() {
+    if (!driveState.signedIn) return;
+    
+    try {
+        // Contraseña
+        driveState.passwordFileId = await findOrCreateFile(GOOGLE_CONFIG.PASSWORD_FILE, 'text/plain', 'maria');
+        const password = await readFile(driveState.passwordFileId);
+        mariaPassword = password.trim();
+        localStorage.setItem('mariaPassword', mariaPassword);
+        
+        // Base de datos
+        driveState.databaseFileId = await findOrCreateFile(GOOGLE_CONFIG.DATABASE_FILE, 'application/json', '{}');
+        const dbContent = await readFile(driveState.databaseFileId);
+        tasksDatabase = JSON.parse(dbContent);
+        localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
+        
+        // Hucha
+        driveState.piggybankFileId = await findOrCreateFile(GOOGLE_CONFIG.PIGGYBANK_FILE, 'application/json', '0');
+        const piggyContent = await readFile(driveState.piggybankFileId);
+        piggyBankBalance = parseFloat(piggyContent);
+        localStorage.setItem('piggyBankBalance', piggyBankBalance.toString());
+        
+        console.log('Datos cargados desde Drive');
+        updatePiggyBankDisplay();
+        renderCalendar();
+    } catch (error) {
+        console.error('Error cargando datos desde Drive:', error);
+    }
+}
+
+// Guardar contraseña en Drive
+async function savePasswordToDriveReal(password) {
+    if (!driveState.signedIn) {
+        localStorage.setItem('mariaPassword', password);
         return;
     }
     
     try {
-        // Buscar archivo de base de datos
-        const response = await gapi.client.drive.files.list({
-            q: `name='${CONFIG.DATABASE_FILE_NAME}' and '${CONFIG.DRIVE_FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id, name)',
-            spaces: 'drive'
-        });
-        
-        if (response.result.files && response.result.files.length > 0) {
-            const fileId = response.result.files[0].id;
-            
-            // Descargar contenido del archivo
-            const fileContent = await gapi.client.drive.files.get({
-                fileId: fileId,
-                alt: 'media'
-            });
-            
-            tasksDatabase = JSON.parse(fileContent.body);
-            console.log('Base de datos cargada desde Drive');
-            
-            // Guardar también en localStorage como backup
-            localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
+        if (!driveState.passwordFileId) {
+            driveState.passwordFileId = await findOrCreateFile(GOOGLE_CONFIG.PASSWORD_FILE, 'text/plain', password);
         } else {
-            console.log('Base de datos no encontrada en Drive, iniciando nueva');
-            tasksDatabase = {};
-            await saveDatabaseToDriveReal();
+            await updateFile(driveState.passwordFileId, password, 'text/plain');
         }
+        localStorage.setItem('mariaPassword', password);
+        console.log('Contraseña guardada en Drive');
     } catch (error) {
-        console.error('Error al cargar base de datos desde Drive:', error);
-        console.log('Usando base de datos de localStorage');
-        loadLocalDatabase();
+        console.error('Error guardando contraseña:', error);
+        localStorage.setItem('mariaPassword', password);
     }
 }
 
+// Guardar base de datos en Drive
 async function saveDatabaseToDriveReal() {
-    if (!gapiInited) {
-        console.log('Drive API no iniciada, usando localStorage');
+    if (!driveState.signedIn) {
         saveLocalDatabase();
         return;
     }
@@ -218,82 +261,43 @@ async function saveDatabaseToDriveReal() {
     try {
         const content = JSON.stringify(tasksDatabase, null, 2);
         
-        const fileMetadata = {
-            name: CONFIG.DATABASE_FILE_NAME,
-            mimeType: 'application/json',
-            parents: [CONFIG.DRIVE_FOLDER_ID]
-        };
-        
-        // Buscar si ya existe el archivo
-        const searchResponse = await gapi.client.drive.files.list({
-            q: `name='${CONFIG.DATABASE_FILE_NAME}' and '${CONFIG.DRIVE_FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id)',
-            spaces: 'drive'
-        });
-        
-        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-            // Actualizar archivo existente
-            const fileId = searchResponse.result.files[0].id;
-            
-            await gapi.client.request({
-                path: `/upload/drive/v3/files/${fileId}`,
-                method: 'PATCH',
-                params: { uploadType: 'media' },
-                headers: { 'Content-Type': 'application/json' },
-                body: content
-            });
-            
-            console.log('Base de datos actualizada en Drive');
+        if (!driveState.databaseFileId) {
+            driveState.databaseFileId = await findOrCreateFile(GOOGLE_CONFIG.DATABASE_FILE, 'application/json', content);
         } else {
-            // Crear nuevo archivo
-            const file = new Blob([content], { type: 'application/json' });
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-            form.append('file', file);
-            
-            await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                method: 'POST',
-                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }),
-                body: form
-            });
-            
-            console.log('Base de datos creada en Drive');
+            await updateFile(driveState.databaseFileId, content, 'application/json');
         }
-        
-        // Guardar también en localStorage
         localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
-        
+        console.log('Base de datos guardada en Drive');
     } catch (error) {
-        console.error('Error al guardar base de datos en Drive:', error);
+        console.error('Error guardando base de datos:', error);
         saveLocalDatabase();
     }
 }
 
-// ==================== INSTRUCCIONES DE USO ====================
-/*
-PARA ACTIVAR GOOGLE DRIVE:
+// Guardar hucha en Drive
+async function savePiggyBankToDrive() {
+    if (!driveState.signedIn) {
+        localStorage.setItem('piggyBankBalance', piggyBankBalance.toString());
+        return;
+    }
+    
+    try {
+        const content = piggyBankBalance.toString();
+        
+        if (!driveState.piggybankFileId) {
+            driveState.piggybankFileId = await findOrCreateFile(GOOGLE_CONFIG.PIGGYBANK_FILE, 'application/json', content);
+        } else {
+            await updateFile(driveState.piggybankFileId, content, 'application/json');
+        }
+        localStorage.setItem('piggyBankBalance', piggyBankBalance.toString());
+        console.log('Hucha guardada en Drive');
+    } catch (error) {
+        console.error('Error guardando hucha:', error);
+        localStorage.setItem('piggyBankBalance', piggyBankBalance.toString());
+    }
+}
 
-1. Descomenta las siguientes líneas en index.html (antes de app.js):
-   <script src="drive-config.js"></script>
-
-2. Reemplaza las credenciales en la parte superior de este archivo
-
-3. En app.js, reemplaza las funciones simuladas por las reales:
-   - loadPasswordFromDrive() -> loadPasswordFromDriveReal()
-   - savePasswordToDrive() -> savePasswordToDriveReal()
-   - loadDatabaseFromDrive() -> loadDatabaseFromDriveReal()
-   - saveDatabaseToDrive() -> saveDatabaseToDriveReal()
-
-4. En app.js, en la función loadGoogleAPI(), reemplaza:
-   gapiInited = true;
-   loadPasswordFromLocalStorage();
-   
-   Por:
-   initGoogleDriveAPI();
-
-5. Sube la aplicación a un servidor HTTPS (GitHub Pages, Netlify, etc.)
-   Google OAuth NO funciona con file:// o http://
-
-6. Asegúrate de que la URL del servidor esté en los "Orígenes autorizados"
-   en Google Cloud Console
-*/
+// Inicializar Drive automáticamente al cargar
+window.addEventListener('load', () => {
+    prepareDrive();
+});
