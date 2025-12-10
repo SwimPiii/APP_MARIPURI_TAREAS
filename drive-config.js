@@ -9,14 +9,12 @@ const GOOGLE_CONFIG = {
 };
 
 const driveState = {
-    gapiLoaded: false,
-    gisLoaded: false,
-    clientInitialized: false,
     signedIn: false,
     passwordFileId: null,
     databaseFileId: null,
     piggybankFileId: null,
-    tokenClient: null
+    tokenClient: null,
+    accessToken: null
 };
 
 // Esperar a que GIS se cargue
@@ -35,49 +33,11 @@ async function waitForGIS(timeoutMs = 5000) {
     });
 }
 
-// Esperar a que GAPI se cargue
-async function waitForGAPI(timeoutMs = 5000) {
-    const start = Date.now();
-    return new Promise((resolve, reject) => {
-        (function loop() {
-            if (window.gapi && window.gapi.load) {
-                return resolve(true);
-            }
-            if (Date.now() - start > timeoutMs) {
-                return reject(new Error('GAPI no cargó'));
-            }
-            setTimeout(loop, 100);
-        })();
-    });
-}
-
-// Inicializar cliente de Google API
-async function initGapiClient() {
-    if (driveState.clientInitialized) return true;
-    
-    await waitForGAPI();
-    
-    return new Promise((resolve, reject) => {
-        window.gapi.load('client', async () => {
-            try {
-                await window.gapi.client.init({
-                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-                });
-                driveState.clientInitialized = true;
-                console.log('GAPI client inicializado');
-                resolve(true);
-            } catch (e) {
-                console.error('Error init gapi client', e);
-                reject(e);
-            }
-        });
-    });
-}
+// Eliminado soporte de GAPI: usaremos solo GIS + fetch
 
 // Preparar Drive en segundo plano
 async function prepareDrive() {
     try {
-        await initGapiClient();
         await waitForGIS();
         
         if (!driveState.tokenClient) {
@@ -122,8 +82,7 @@ async function driveSignIn() {
         driveState.tokenClient.callback = async (resp) => {
             try {
                 if (resp && resp.access_token) {
-                    await initGapiClient();
-                    window.gapi.client.setToken({ access_token: resp.access_token });
+                    driveState.accessToken = resp.access_token;
                     driveState.signedIn = true;
                     console.log('Sesión iniciada en Drive');
                     
@@ -140,11 +99,9 @@ async function driveSignIn() {
         };
         
         try {
-            // Usar 'consent' solo la primera vez, después intentará sin popup
-            const hasToken = gapi.client.getToken();
-            driveState.tokenClient.requestAccessToken({ 
-                prompt: hasToken ? '' : 'consent' 
-            });
+            // Solicitar token (primer uso: consent; luego silencioso)
+            const prompt = driveState.accessToken ? '' : 'consent';
+            driveState.tokenClient.requestAccessToken({ prompt });
         } catch (e) {
             reject(e);
         }
@@ -154,15 +111,13 @@ async function driveSignIn() {
 // Buscar o crear archivo en Drive
 async function findOrCreateFile(fileName, mimeType, content = '') {
     try {
-        // Buscar archivo existente
-        const searchResponse = await gapi.client.drive.files.list({
-            q: `name='${fileName}' and '${GOOGLE_CONFIG.FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id, name)',
-            spaces: 'drive'
+        // Buscar archivo existente (REST)
+        const listResp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='"+fileName+"' and '"+GOOGLE_CONFIG.FOLDER_ID+"' in parents and trashed=false")}&fields=files(id,name)&spaces=drive`, {
+            headers: { Authorization: `Bearer ${driveState.accessToken}` }
         });
-        
-        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-            return searchResponse.result.files[0].id;
+        const listJson = await listResp.json();
+        if (listJson.files && listJson.files.length > 0) {
+            return listJson.files[0].id;
         }
         
         // Crear nuevo archivo
@@ -179,7 +134,7 @@ async function findOrCreateFile(fileName, mimeType, content = '') {
         
         const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
             method: 'POST',
-            headers: new Headers({ 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }),
+            headers: new Headers({ 'Authorization': 'Bearer ' + driveState.accessToken }),
             body: form
         });
         
@@ -194,11 +149,10 @@ async function findOrCreateFile(fileName, mimeType, content = '') {
 // Leer contenido de archivo
 async function readFile(fileId) {
     try {
-        const response = await gapi.client.drive.files.get({
-            fileId: fileId,
-            alt: 'media'
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${driveState.accessToken}` }
         });
-        return response.body;
+        return await response.text();
     } catch (error) {
         console.error('Error leyendo archivo:', error);
         throw error;
@@ -208,11 +162,12 @@ async function readFile(fileId) {
 // Actualizar contenido de archivo
 async function updateFile(fileId, content, mimeType) {
     try {
-        await gapi.client.request({
-            path: `/upload/drive/v3/files/${fileId}`,
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
             method: 'PATCH',
-            params: { uploadType: 'media' },
-            headers: { 'Content-Type': mimeType },
+            headers: {
+                'Authorization': `Bearer ${driveState.accessToken}`,
+                'Content-Type': mimeType
+            },
             body: content
         });
     } catch (error) {
@@ -235,13 +190,13 @@ async function loadAllFromDrive() {
         // Base de datos
         driveState.databaseFileId = await findOrCreateFile(GOOGLE_CONFIG.DATABASE_FILE, 'application/json', '{}');
         const dbContent = await readFile(driveState.databaseFileId);
-        tasksDatabase = JSON.parse(dbContent);
+        tasksDatabase = JSON.parse(dbContent || '{}');
         localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
         
         // Hucha
         driveState.piggybankFileId = await findOrCreateFile(GOOGLE_CONFIG.PIGGYBANK_FILE, 'application/json', '0');
         const piggyContent = await readFile(driveState.piggybankFileId);
-        piggyBankBalance = parseFloat(piggyContent);
+        piggyBankBalance = parseFloat(piggyContent || '0');
         localStorage.setItem('piggyBankBalance', piggyBankBalance.toString());
         
         console.log('Datos cargados desde Drive');
@@ -292,7 +247,7 @@ async function saveDatabaseToDriveReal() {
         console.log('Base de datos guardada en Drive');
     } catch (error) {
         console.error('Error guardando base de datos:', error);
-        saveLocalDatabase();
+        localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
     }
 }
 
@@ -321,27 +276,18 @@ async function savePiggyBankToDrive() {
 
 // Inicializar Drive automáticamente al cargar
 window.addEventListener('load', () => {
-    // Cargar scripts de Google dinámicamente
-    const gapiScript = document.createElement('script');
-    gapiScript.src = 'https://apis.google.com/js/api.js';
-    gapiScript.onload = () => {
-        console.log('GAPI script cargado');
-        
-        const gsiScript = document.createElement('script');
-        gsiScript.src = 'https://accounts.google.com/gsi/client';
-        gsiScript.onload = () => {
-            console.log('GSI script cargado');
-            
-            // Esperar un poco más y preparar Drive
-            setTimeout(() => {
-                prepareDrive().then(() => {
-                    console.log('Drive listo para usar');
-                }).catch(err => {
-                    console.log('Drive no disponible:', err);
-                });
-            }, 500);
-        };
-        document.head.appendChild(gsiScript);
+    // Cargar solo GIS (sin gapi)
+    const gsiScript = document.createElement('script');
+    gsiScript.src = 'https://accounts.google.com/gsi/client';
+    gsiScript.onload = () => {
+        console.log('GSI script cargado');
+        setTimeout(() => {
+            prepareDrive().then(() => {
+                console.log('Drive listo para usar');
+            }).catch(err => {
+                console.log('Drive no disponible:', err);
+            });
+        }, 300);
     };
-    document.head.appendChild(gapiScript);
+    document.head.appendChild(gsiScript);
 });

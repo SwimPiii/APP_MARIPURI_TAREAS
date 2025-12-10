@@ -75,6 +75,26 @@ function setupEventListeners() {
     
     // Logout
     document.getElementById('logoutButton').addEventListener('click', handleLogout);
+    // Conectar Drive (fallback por gesto de usuario)
+    const driveBtn = document.getElementById('driveConnectBtn');
+    if (driveBtn) {
+        driveBtn.addEventListener('click', handleDriveConnect);
+    }
+    const driveBtnLogin = document.getElementById('driveConnectBtnLogin');
+    if (driveBtnLogin) {
+        driveBtnLogin.addEventListener('click', async () => {
+            const status = document.getElementById('driveStatusLogin');
+            status.textContent = 'Conectando a Drive…';
+            try {
+                await handleDriveConnect();
+                status.textContent = '✅ Conectado a Drive';
+                driveBtnLogin.textContent = '✅ Conectado';
+                driveBtnLogin.disabled = true;
+            } catch (e) {
+                status.textContent = '❌ No se pudo conectar';
+            }
+        });
+    }
     
     // Navegación de semanas
     document.getElementById('prevWeek').addEventListener('click', () => navigateWeek(-1));
