@@ -321,11 +321,27 @@ async function savePiggyBankToDrive() {
 
 // Inicializar Drive automáticamente al cargar
 window.addEventListener('load', () => {
-    setTimeout(() => {
-        prepareDrive().then(() => {
-            console.log('Drive listo para usar');
-        }).catch(err => {
-            console.log('Drive no disponible:', err);
-        });
-    }, 1000); // Esperar 1 segundo para que GAPI y GIS se carguen
+    // Cargar scripts de Google dinámicamente
+    const gapiScript = document.createElement('script');
+    gapiScript.src = 'https://apis.google.com/js/api.js';
+    gapiScript.onload = () => {
+        console.log('GAPI script cargado');
+        
+        const gsiScript = document.createElement('script');
+        gsiScript.src = 'https://accounts.google.com/gsi/client';
+        gsiScript.onload = () => {
+            console.log('GSI script cargado');
+            
+            // Esperar un poco más y preparar Drive
+            setTimeout(() => {
+                prepareDrive().then(() => {
+                    console.log('Drive listo para usar');
+                }).catch(err => {
+                    console.log('Drive no disponible:', err);
+                });
+            }, 500);
+        };
+        document.head.appendChild(gsiScript);
+    };
+    document.head.appendChild(gapiScript);
 });
