@@ -13,7 +13,8 @@ const CONFIG = {
 const DEFAULT_TASKS = {
     daily: [ // Lunes a Domingo
         { title: 'Poner y quitar la mesa (comida)', description: '' },
-        { title: 'Poner y quitar la mesa (cena)', description: '' }
+        { title: 'Poner y quitar la mesa (cena)', description: '' },
+        { title: 'Hacer tu cama', description: '' }
     ],
     weekdays: [ // Lunes a Viernes
         { title: 'Hacer deberes y/o estudiar', description: '' }
@@ -92,6 +93,15 @@ function setupEventListeners() {
     document.querySelector('.close').addEventListener('click', closeModal);
     document.getElementById('cancelTaskBtn').addEventListener('click', closeModal);
     document.getElementById('taskForm').addEventListener('submit', handleTaskSubmit);
+
+    // Próximas tareas
+    const upcomingBtn = document.getElementById('upcomingBtn');
+    const upcomingModal = document.getElementById('upcomingModal');
+    const closeUpcoming = document.getElementById('closeUpcoming');
+    if (upcomingBtn && upcomingModal && closeUpcoming) {
+        upcomingBtn.addEventListener('click', showUpcomingTasks);
+        closeUpcoming.addEventListener('click', () => upcomingModal.style.display = 'none');
+    }
 }
 
 // ==================== GOOGLE DRIVE API ====================
@@ -904,4 +914,71 @@ function fillWeekAutomatically() {
     } else {
         alert('ℹ️ Todas las tareas por defecto ya estaban en la semana');
     }
+}
+
+// ==================== PRÓXIMAS TAREAS ====================
+const AUTO_TITLES_EXCLUDE = new Set([
+    'Poner y quitar la mesa (comida)',
+    'Poner y quitar la mesa (cena)',
+    'Limpiar habitación',
+    'Hacer deberes y/o estudiar',
+    'Hacer tu cama'
+]);
+
+function showUpcomingTasks() {
+    const upcomingModal = document.getElementById('upcomingModal');
+    const upcomingList = document.getElementById('upcomingList');
+    if (!upcomingModal || !upcomingList) return;
+    const today = new Date();
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const items = [];
+    
+    // Considerar semanas presentes en la base de datos (actual y siguientes si existen)
+    const weekKeys = Object.keys(tasksDatabase).sort();
+    weekKeys.forEach(weekKey => {
+        const weekStartDate = new Date(weekKey);
+        const data = tasksDatabase[weekKey];
+        if (!data || !data.tasks) return;
+        data.tasks.forEach(task => {
+            if (AUTO_TITLES_EXCLUDE.has(task.title)) return;
+            // Solo próximas (pendientes o done), no completed
+            if (task.status === 'completed') return;
+            const taskDate = new Date(weekStartDate);
+            taskDate.setDate(weekStartDate.getDate() + task.day);
+            const diffDays = Math.ceil((taskDate - today) / MS_PER_DAY);
+            if (diffDays >= 0) {
+                items.push({
+                    title: task.title,
+                    dayName: getDayName(task.day),
+                    date: taskDate,
+                    daysLeft: diffDays
+                });
+            }
+        });
+    });
+    
+    items.sort((a, b) => a.date - b.date);
+    
+    upcomingList.innerHTML = '';
+    if (items.length === 0) {
+        upcomingList.innerHTML = '<p>No hay próximas tareas especiales.</p>';
+    } else {
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.alignItems = 'center';
+            row.style.padding = '8px 0';
+            const left = document.createElement('div');
+            left.textContent = `${item.dayName} - ${item.title}`;
+            const right = document.createElement('div');
+            right.textContent = `${item.daysLeft} días`;
+            right.style.color = '#22c55e';
+            right.style.fontWeight = 'bold';
+            row.appendChild(left);
+            row.appendChild(right);
+            upcomingList.appendChild(row);
+        });
+    }
+    upcomingModal.style.display = 'block';
 }

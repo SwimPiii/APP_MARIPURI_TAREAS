@@ -52,6 +52,7 @@
         
         <div class="header">
             <h2 id="welcomeMessage">Bienvenida, Maria! 🌺</h2>
+            <button id="upcomingBtn" class="btn-week" style="background:#22c55e;">Próximas tareas</button>
             <button id="logoutButton" class="btn-logout">Salir</button>
         </div>
 
@@ -125,6 +126,15 @@
                         <button type="button" id="cancelTaskBtn" class="btn-secondary">Cancelar</button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Modal Próximas Tareas -->
+        <div id="upcomingModal" class="modal">
+            <div class="modal-content">
+                <span class="close" id="closeUpcoming">&times;</span>
+                <h3 id="upcomingTitle">Próximas tareas</h3>
+                <div id="upcomingList"></div>
             </div>
         </div>
     </div>
