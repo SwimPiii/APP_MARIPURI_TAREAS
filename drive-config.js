@@ -14,7 +14,9 @@ const driveState = {
     databaseFileId: null,
     piggybankFileId: null,
     tokenClient: null,
-    accessToken: null
+    accessToken: null,
+    tokenObtainedAt: 0,
+    accountHint: 'ismaelfernandezsaez2@gmail.com'
 };
 
 // Esperar a que GIS se cargue
@@ -45,6 +47,7 @@ async function prepareDrive() {
                 client_id: GOOGLE_CONFIG.CLIENT_ID,
                 scope: GOOGLE_CONFIG.SCOPES,
                 callback: '',
+                use_fedcm_for_prompt: true
             });
         }
         console.log('Drive preparado correctamente');
@@ -72,10 +75,25 @@ async function driveSignIn() {
                 client_id: GOOGLE_CONFIG.CLIENT_ID,
                 scope: GOOGLE_CONFIG.SCOPES,
                 callback: '',
+                use_fedcm_for_prompt: true
             });
         } catch (e) {
             return Promise.reject(new Error('No se pudo inicializar Google Drive: ' + e.message));
         }
+    }
+
+    // Si ya tenemos un token reciente, reutilizarlo sin pedir uno nuevo
+    const now = Date.now();
+    const tokenIsFresh = driveState.accessToken && (now - driveState.tokenObtainedAt) < (50 * 60 * 1000); // ~50 min
+    if (tokenIsFresh) {
+        driveState.signedIn = true;
+        console.log('Reutilizando token de Drive (silencioso)');
+        try {
+            await loadAllFromDrive();
+        } catch (e) {
+            console.warn('Fallo al cargar con token reutilizado, se solicitará nuevo token:', e);
+        }
+        return true;
     }
     
     return new Promise((resolve, reject) => {
@@ -83,7 +101,9 @@ async function driveSignIn() {
             try {
                 if (resp && resp.access_token) {
                     driveState.accessToken = resp.access_token;
+                    driveState.tokenObtainedAt = Date.now();
                     driveState.signedIn = true;
+                    try { localStorage.setItem('driveConsentGiven', 'true'); } catch {}
                     console.log('Sesión iniciada en Drive');
                     
                     // Cargar datos desde Drive
@@ -100,12 +120,57 @@ async function driveSignIn() {
         
         try {
             // Solicitar token (primer uso: consent; luego silencioso)
-            const prompt = driveState.accessToken ? '' : 'consent';
-            driveState.tokenClient.requestAccessToken({ prompt });
+            let prompt = '';
+            try {
+                const hasConsent = localStorage.getItem('driveConsentGiven') === 'true';
+                prompt = hasConsent ? '' : 'consent';
+            } catch { prompt = 'consent'; }
+            const params = { prompt };
+            if (driveState.accountHint) params.hint = driveState.accountHint;
+            driveState.tokenClient.requestAccessToken(params);
         } catch (e) {
             reject(e);
         }
     });
+}
+
+// Intento silencioso al cargar la página si ya se dio consentimiento
+async function driveTrySilentSignIn() {
+    try {
+        await waitForGIS();
+        if (!driveState.tokenClient) {
+            driveState.tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CONFIG.CLIENT_ID,
+                scope: GOOGLE_CONFIG.SCOPES,
+                callback: '',
+                use_fedcm_for_prompt: true
+            });
+        }
+        return await new Promise((resolve) => {
+            driveState.tokenClient.callback = async (resp) => {
+                if (resp && resp.access_token) {
+                    driveState.accessToken = resp.access_token;
+                    driveState.tokenObtainedAt = Date.now();
+                    driveState.signedIn = true;
+                    try { await loadAllFromDrive(); } catch {}
+                    resolve(true);
+                } else {
+                    resolve(false);
+                }
+            };
+            try {
+                const hasConsent = localStorage.getItem('driveConsentGiven') === 'true';
+                if (!hasConsent) return resolve(false);
+                const params = { prompt: 'none' };
+                if (driveState.accountHint) params.hint = driveState.accountHint;
+                driveState.tokenClient.requestAccessToken(params);
+            } catch (e) {
+                resolve(false);
+            }
+        });
+    } catch {
+        return false;
+    }
 }
 
 // Buscar o crear archivo en Drive
@@ -276,18 +341,36 @@ async function savePiggyBankToDrive() {
 
 // Inicializar Drive automáticamente al cargar
 window.addEventListener('load', () => {
-    // Cargar solo GIS (sin gapi)
-    const gsiScript = document.createElement('script');
-    gsiScript.src = 'https://accounts.google.com/gsi/client';
-    gsiScript.onload = () => {
-        console.log('GSI script cargado');
-        setTimeout(() => {
-            prepareDrive().then(() => {
-                console.log('Drive listo para usar');
-            }).catch(err => {
-                console.log('Drive no disponible:', err);
-            });
-        }, 300);
+    // Cargar gapi primero y luego GIS, como en PROGRAMA_WEB_ISMAEL
+    const gapiScript = document.createElement('script');
+    gapiScript.src = 'https://apis.google.com/js/api.js';
+    gapiScript.onload = () => {
+        console.log('GAPI script cargado');
+        const gsiScript = document.createElement('script');
+        gsiScript.src = 'https://accounts.google.com/gsi/client';
+        gsiScript.onload = () => {
+            console.log('GSI script cargado');
+            setTimeout(() => {
+                prepareDrive().then(() => {
+                    console.log('Drive listo para usar');
+                    // Intentar conexión silenciosa
+                    driveTrySilentSignIn().then((ok) => {
+                        if (ok) {
+                            console.log('Conectado a Drive en silencio');
+                        } else {
+                            // Sin consentimiento previo: abrir popup automáticamente
+                            try {
+                                const hasConsent = localStorage.getItem('driveConsentGiven') === 'true';
+                                if (!hasConsent) driveSignIn().catch(()=>{});
+                            } catch {}
+                        }
+                    });
+                }).catch(err => {
+                    console.log('Drive no disponible:', err);
+                });
+            }, 300);
+        };
+        document.head.appendChild(gsiScript);
     };
-    document.head.appendChild(gsiScript);
+    document.head.appendChild(gapiScript);
 });
