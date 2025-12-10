@@ -75,26 +75,7 @@ function setupEventListeners() {
     
     // Logout
     document.getElementById('logoutButton').addEventListener('click', handleLogout);
-    // Conectar Drive (fallback por gesto de usuario)
-    const driveBtn = document.getElementById('driveConnectBtn');
-    if (driveBtn) {
-        driveBtn.addEventListener('click', handleDriveConnect);
-    }
-    const driveBtnLogin = document.getElementById('driveConnectBtnLogin');
-    if (driveBtnLogin) {
-        driveBtnLogin.addEventListener('click', async () => {
-            const status = document.getElementById('driveStatusLogin');
-            status.textContent = 'Conectando a Drive…';
-            try {
-                await handleDriveConnect();
-                status.textContent = '✅ Conectado a Drive';
-                driveBtnLogin.textContent = '✅ Conectado';
-                driveBtnLogin.disabled = true;
-            } catch (e) {
-                status.textContent = '❌ No se pudo conectar';
-            }
-        });
-    }
+    // (Eliminados botones de conectar Drive; conexión ahora es automática)
     
     // Navegación de semanas
     document.getElementById('prevWeek').addEventListener('click', () => navigateWeek(-1));
@@ -241,6 +222,15 @@ async function handleLogin() {
     }
     
     if (isValid) {
+        // Gesto de usuario: intentar conectar Drive automáticamente aquí
+        try {
+            if (typeof driveSignIn === 'function') {
+                await driveSignIn();
+            }
+        } catch (e) {
+            console.log('Drive no se pudo conectar automáticamente en login:', e);
+        }
+
         document.getElementById('loginScreen').classList.remove('active');
         document.getElementById('mainScreen').classList.add('active');
         
@@ -251,14 +241,13 @@ async function handleLogin() {
         loadLocalDatabase();
         renderCalendar();
         
-        // Intentar conectar con Google Drive en segundo plano
+        // Si aún no está conectado, intentarlo en segundo plano
         setTimeout(async () => {
             try {
                 if (typeof driveSignIn === 'function') {
                     const isDriveConnected = typeof driveState !== 'undefined' && driveState.signedIn;
                     if (!isDriveConnected) {
                         await driveSignIn();
-                        // Recargar datos después de conectar
                         renderCalendar();
                     }
                 }
