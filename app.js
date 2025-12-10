@@ -183,7 +183,10 @@ function loadLocalDatabase() {
 
 function saveLocalDatabase() {
     localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
-    saveDatabaseToDrive();
+    // Guardar también en Drive si está conectado
+    if (typeof saveDatabaseToDriveReal === 'function') {
+        saveDatabaseToDriveReal().catch(err => console.error('Error guardando en Drive:', err));
+    }
 }
 
 // ==================== AUTENTICACIÓN ====================

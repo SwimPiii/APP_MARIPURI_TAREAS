@@ -276,7 +276,7 @@ async function savePasswordToDriveReal(password) {
 // Guardar base de datos en Drive
 async function saveDatabaseToDriveReal() {
     if (!driveState.signedIn) {
-        saveLocalDatabase();
+        localStorage.setItem('tasksDatabase', JSON.stringify(tasksDatabase));
         return;
     }
     
