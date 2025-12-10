@@ -321,5 +321,11 @@ async function savePiggyBankToDrive() {
 
 // Inicializar Drive automáticamente al cargar
 window.addEventListener('load', () => {
-    prepareDrive();
+    setTimeout(() => {
+        prepareDrive().then(() => {
+            console.log('Drive listo para usar');
+        }).catch(err => {
+            console.log('Drive no disponible:', err);
+        });
+    }, 1000); // Esperar 1 segundo para que GAPI y GIS se carguen
 });
