@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Stitch">
+    <meta name="apple-mobile-web-app-title" content="Tareas">
     <meta name="theme-color" content="#3b82f6">
-    <title>Maria's Stitch App 🌺</title>
+    <title>Tareas de casa</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icon-192.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
@@ -16,29 +16,22 @@
     <!-- Pantalla de Login -->
     <div id="loginScreen" class="screen active">
         <div class="login-container">
-            <h1 class="app-title">🌺 Tareas de Maria 🌺</h1>
+            <h1 class="app-title" id="loginTitle">🌺 Tareas de Maria 🌺</h1>
             <div class="stitch-container">
                 <img src="stich_hola2.png" alt="Stitch" class="stitch-image">
             </div>
             
-            <!-- Selector de Usuario -->
-            <div class="user-selector">
-                <label class="switch-label">
-                    <span class="user-option maria-option active">Maria</span>
-                    <label class="switch">
-                        <input type="checkbox" id="userTypeSwitch">
-                        <span class="slider"></span>
-                    </label>
-                    <span class="user-option super-option">Super Usuario</span>
-                </label>
-            </div>
-            
-            <!-- Formulario de Login -->
             <div class="login-form">
-                <input type="password" id="passwordInput" placeholder="Contraseña" class="password-input">
+                <label for="profileSelect">Perfil</label>
+                <select id="profileSelect" class="profile-select" autocomplete="off">
+                    <option value="maria">Maria</option>
+                    <option value="guapito">Guapito</option>
+                    <option value="sargento">Sargento</option>
+                </select>
+                <label for="passwordInput">Contraseña</label>
+                <input type="password" id="passwordInput" placeholder="Contraseña" class="password-input" autocomplete="current-password">
                 <button id="loginButton" class="btn-primary">Entrar ✨</button>
                 <p id="loginError" class="error-message"></p>
-                
             </div>
         </div>
     </div>
@@ -70,7 +63,7 @@
             </div>
         </div>
 
-        <!-- Barra de Progreso de Puntos -->
+        <!-- Recompensas semanales de Maria -->
         <div class="points-container">
             <div class="points-header">
                 <span>Progreso Semanal</span>
@@ -91,7 +84,7 @@
             <button id="nextWeek" class="btn-week">Semana Siguiente ▶</button>
         </div>
 
-        <!-- Botones de Administración (solo Super Usuario) -->
+        <!-- Botones de administración (solo Sargento) -->
         <div id="adminControls" class="admin-controls" style="display: none;">
             <button id="fillWeekBtn" class="btn-admin btn-fill">📋 Rellenar Semana Automáticamente</button>
             <button id="addBonusBtn" class="btn-admin">➕ Añadir Bonificación</button>

@@ -1,6 +1,19 @@
 // ==================== CONFIGURACIÓN ====================
 const CONFIG = {
-    SUPER_USER_PASSWORD: 'Thanitosguapito',
+    PROFILE_PASSWORDS: {
+        sargento: {
+            salt: '6ea7373cf946c616e2bdca3bfcf78cc4',
+            hash: '9631305fa9d4b68ee1468046f37d3be553fd33ac6a40dea5c09f5a2250215497'
+        },
+        guapito: {
+            salt: 'b906f7291ca06f93b89eb71ba7756e8a',
+            hash: 'd41a42bd9bf34b1b0d242bd3c89c2b80e31cee4c93c1438f1013d926930712af'
+        },
+        maria: {
+            salt: '9a3f48a9a0efb43aa837a3b09d2ac2ac',
+            hash: '8e4f2d016882f93d6881486a07a74b96c650fa4e1a45b25621c7e40a96419092'
+        }
+    },
     DRIVE_FOLDER_ID: '1e5ebZ1haq0AFua98XBSe9lmUfOwjyHLT',
     PASSWORD_FILE_NAME: 'maria_password.txt',
     DATABASE_FILE_NAME: 'tasks_database.json',
@@ -25,7 +38,7 @@ const DEFAULT_TASKS = {
 };
 
 // ==================== VARIABLES GLOBALES ====================
-let currentUser = null; // 'maria' o 'super_usuario'
+let currentUser = null; // 'sargento', 'guapito' o 'maria'
 let currentWeekStart = null; // Fecha de inicio de la semana actual
 let tasksDatabase = {}; // Base de datos de tareas por semana
 let piggyBank = 0; // Dinero acumulado en la hucha
@@ -53,6 +66,59 @@ function initializeApp() {
     loadPiggyBank();
 }
 
+function isAdministrator() {
+    return currentUser === 'sargento';
+}
+
+function isAdminTask(creator) {
+    return creator === 'sargento' || creator === 'super_usuario';
+}
+
+function getProfileLabel(profile) {
+    if (profile === 'sargento' || profile === 'super_usuario') return 'Sargento';
+    if (profile === 'guapito') return 'Guapito';
+    return 'Maria';
+}
+
+function updateProfileTheme(profile) {
+    const serious = profile !== 'maria';
+    document.body.classList.toggle('theme-serious', serious);
+    document.body.classList.toggle('profile-guapito', profile === 'guapito');
+    const title = document.getElementById('loginTitle');
+    if (title) {
+        title.textContent = profile === 'maria' ? '🌺 Tareas de Maria 🌺' : `Tareas · ${getProfileLabel(profile)}`;
+    }
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = serious ? '#1f2937' : '#3b82f6';
+}
+
+async function verifyProfilePassword(profile, password) {
+    const verifier = CONFIG.PROFILE_PASSWORDS[profile];
+    if (!verifier || !window.crypto?.subtle) {
+        throw new Error('Este navegador no permite verificar la clave. Usa una versión reciente.');
+    }
+
+    const key = await window.crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(password),
+        'PBKDF2',
+        false,
+        ['deriveBits']
+    );
+    const result = await window.crypto.subtle.deriveBits({
+        name: 'PBKDF2',
+        salt: Uint8Array.from(verifier.salt.match(/.{2}/g), byte => parseInt(byte, 16)),
+        iterations: 200000,
+        hash: 'SHA-256'
+    }, key, 256);
+    const actualHash = Array.from(new Uint8Array(result), byte => byte.toString(16).padStart(2, '0')).join('');
+    let difference = 0;
+    for (let index = 0; index < verifier.hash.length; index++) {
+        difference |= verifier.hash.charCodeAt(index) ^ actualHash.charCodeAt(index);
+    }
+    return difference === 0;
+}
+
 function setupEventListeners() {
     // Login
     document.getElementById('loginButton').addEventListener('click', handleLogin);
@@ -60,18 +126,8 @@ function setupEventListeners() {
         if (e.key === 'Enter') handleLogin();
     });
     
-    // Switch de usuario
-    document.getElementById('userTypeSwitch').addEventListener('change', function() {
-        const mariaOption = document.querySelector('.maria-option');
-        const superOption = document.querySelector('.super-option');
-        
-        if (this.checked) {
-            mariaOption.classList.remove('active');
-            superOption.classList.add('active');
-        } else {
-            mariaOption.classList.add('active');
-            superOption.classList.remove('active');
-        }
+    document.getElementById('profileSelect').addEventListener('change', function() {
+        updateProfileTheme(this.value);
     });
     
     // Logout
@@ -204,7 +260,6 @@ function saveLocalDatabase() {
 async function handleLogin() {
     const passwordInput = document.getElementById('passwordInput');
     const password = passwordInput.value.trim();
-    const isSuperUser = document.getElementById('userTypeSwitch').checked;
     const errorMsg = document.getElementById('loginError');
     
     errorMsg.textContent = '';
@@ -214,24 +269,19 @@ async function handleLogin() {
         return;
     }
     
-    let isValid = false;
-    
-    if (isSuperUser) {
-        // Super Usuario
-        if (password === CONFIG.SUPER_USER_PASSWORD) {
-            currentUser = 'super_usuario';
-            isValid = true;
-        }
-    } else {
-        // Maria
-        await loadPasswordFromDrive();
-        if (password === mariaPassword) {
-            currentUser = 'maria';
-            isValid = true;
-        }
+    const selectedProfile = document.getElementById('profileSelect').value;
+    let isValid;
+    try {
+        isValid = await verifyProfilePassword(selectedProfile, password);
+    } catch (error) {
+        console.error('No se pudo verificar la clave del perfil:', error);
+        errorMsg.textContent = error.message;
+        return;
     }
+    if (isValid) currentUser = selectedProfile;
     
     if (isValid) {
+        updateProfileTheme(currentUser);
         // Gesto de usuario: intentar conectar Drive automáticamente aquí
         try {
             if (typeof driveSignIn === 'function') {
@@ -267,9 +317,7 @@ async function handleLogin() {
         }, 500);
         
         // Mostrar controles de admin si es super usuario
-        if (currentUser === 'super_usuario') {
-            document.getElementById('adminControls').style.display = 'flex';
-        }
+        document.getElementById('adminControls').style.display = isAdministrator() ? 'flex' : 'none';
     } else {
         errorMsg.textContent = '❌ Contraseña incorrecta';
         passwordInput.value = '';
@@ -291,6 +339,7 @@ async function handleLogout() {
     }
     
     currentUser = null;
+    updateProfileTheme(document.getElementById('profileSelect').value);
     document.getElementById('mainScreen').classList.remove('active');
     document.getElementById('loginScreen').classList.add('active');
     document.getElementById('passwordInput').value = '';
@@ -302,8 +351,10 @@ function updateWelcomeMessage() {
     const giveMoneyBtn = document.getElementById('giveMoney');
     const editPiggyBtn = document.getElementById('editPiggyBank');
     
-    if (currentUser === 'super_usuario') {
-        welcomeMsg.textContent = 'Panel de Administración 👑';
+    document.getElementById('mainScreen').classList.toggle('profile-guapito', currentUser === 'guapito');
+    document.getElementById('mainScreen').classList.toggle('theme-serious', currentUser !== 'maria');
+    if (isAdministrator()) {
+        welcomeMsg.textContent = 'Sargento · Gestión de tareas';
         if (giveMoneyBtn) {
             giveMoneyBtn.style.display = 'block';
         }
@@ -311,7 +362,7 @@ function updateWelcomeMessage() {
             editPiggyBtn.style.display = 'block';
         }
     } else {
-        welcomeMsg.textContent = 'Bienvenida, Maria! 🌺';
+        welcomeMsg.textContent = currentUser === 'guapito' ? 'Guapito · Tareas' : 'Bienvenida, Maria! 🌺';
         if (giveMoneyBtn) {
             giveMoneyBtn.style.display = 'none';
         }
@@ -452,18 +503,14 @@ function createTaskElement(task, weekKey) {
     
     const taskCreator = document.createElement('div');
     taskCreator.className = 'task-creator';
-    taskCreator.textContent = task.creator === 'super_usuario' ? '👑 Super Usuario' : '🌸 Maria';
+    taskCreator.textContent = `Creada por ${getProfileLabel(task.creator)}`;
     taskContent.appendChild(taskCreator);
     
     // Acciones
     const taskActions = document.createElement('div');
     taskActions.className = 'task-actions';
     
-    // Solo se puede borrar si:
-    // - Es super_usuario
-    // - Es maria y la tarea es suya
-    const canDelete = currentUser === 'super_usuario' || 
-                     (currentUser === 'maria' && task.creator === 'maria');
+    const canDelete = isAdministrator() || task.creator === currentUser;
     
     if (canDelete) {
         const deleteBtn = document.createElement('button');
@@ -495,8 +542,7 @@ function updateProgressBar() {
     const weekKey = getWeekKey(currentWeekStart);
     const weekData = tasksDatabase[weekKey] || { tasks: [], bonus: 0 };
     
-    // Filtrar solo tareas de super_usuario
-    const superUserTasks = weekData.tasks.filter(t => t.creator === 'super_usuario');
+    const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
     const completedTasks = superUserTasks.filter(t => t.status === 'completed');
     
     let totalEuros = 0;
@@ -523,7 +569,7 @@ function updateProgressBar() {
                         superUserTasks.every(t => t.status === 'completed');
     
     const bonusText = document.getElementById('bonusText');
-    if (allCompleted && weekData.bonus === 0 && currentUser === 'super_usuario') {
+    if (allCompleted && weekData.bonus === 0 && isAdministrator()) {
         bonusText.textContent = '🎉 ¡Todas las tareas completadas! Puedes otorgar bonificación';
         bonusText.style.color = '#10b981';
     } else if (allCompleted && weekData.bonus > 0) {
@@ -552,7 +598,7 @@ function openTaskModal(dayIndex) {
     const descriptionField = document.getElementById('taskDescription');
     const descriptionContainer = descriptionField.parentElement;
     
-    if (currentUser === 'super_usuario') {
+    if (isAdministrator()) {
         descriptionField.style.display = 'none';
         descriptionField.required = false;
     } else {
@@ -611,16 +657,14 @@ function changeTaskStatus(task, weekKey) {
     const previousStatus = currentTask.status;
     
     // Lógica de cambio de estado
-    if (currentUser === 'super_usuario') {
-        // Super usuario puede cambiar cualquier estado
+    if (isAdministrator()) {
         if (currentTask.status === 'pending') {
             currentTask.status = 'done';
         } else if (currentTask.status === 'done') {
             currentTask.status = 'completed';
             
-            // Si es una tarea del super_usuario que se completa, añadir dinero a la hucha
-            if (currentTask.creator === 'super_usuario') {
-                const superUserTasks = weekData.tasks.filter(t => t.creator === 'super_usuario');
+            if (isAdminTask(currentTask.creator)) {
+                const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
                 const eurosPerTask = CONFIG.POINTS_PER_EURO / superUserTasks.length;
                 addMoneyToPiggyBank(eurosPerTask);
             }
@@ -628,30 +672,25 @@ function changeTaskStatus(task, weekKey) {
             currentTask.status = 'pending';
             
             // Si se pasa de completed a pending, restar dinero de la hucha
-            if (previousStatus === 'completed' && currentTask.creator === 'super_usuario') {
-                const superUserTasks = weekData.tasks.filter(t => t.creator === 'super_usuario');
+            if (previousStatus === 'completed' && isAdminTask(currentTask.creator)) {
+                const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
                 const eurosPerTask = CONFIG.POINTS_PER_EURO / superUserTasks.length;
                 addMoneyToPiggyBank(-eurosPerTask);
             }
         }
     } else {
-        // Maria solo puede cambiar sus tareas o marcar como "done" las del super_usuario
-        if (currentTask.creator === 'maria') {
-            // Sus propias tareas
+        if (currentTask.creator === currentUser) {
             if (currentTask.status === 'pending') {
-                currentTask.status = 'completed'; // Maria pasa directo a completed
+                currentTask.status = 'completed';
             } else {
                 currentTask.status = 'pending';
             }
-        } else if (currentTask.creator === 'super_usuario') {
-            // Tareas del super_usuario: puede marcar como "done" o volver a "pending"
+        } else if (isAdminTask(currentTask.creator)) {
             if (currentTask.status === 'pending') {
                 currentTask.status = 'done';
             } else if (currentTask.status === 'done') {
-                // Puede volver de amarillo (done) a naranja (pending)
                 currentTask.status = 'pending';
             }
-            // NO puede cambiar "completed" (solo Super_usuario puede)
         }
     }
     
@@ -671,10 +710,11 @@ function deleteTask(task, weekKey) {
 
 // ==================== BONIFICACIONES ====================
 function addBonus() {
+    if (!isAdministrator()) return;
     const weekKey = getWeekKey(currentWeekStart);
     const weekData = tasksDatabase[weekKey] || { tasks: [], bonus: 0 };
     
-    const superUserTasks = weekData.tasks.filter(t => t.creator === 'super_usuario');
+    const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
     const allCompleted = superUserTasks.length > 0 && 
                         superUserTasks.every(t => t.status === 'completed');
     
@@ -711,6 +751,7 @@ function addBonus() {
 }
 
 function removeBonus() {
+    if (!isAdministrator()) return;
     if (!confirm('¿Seguro que quieres quitar la bonificación de esta semana?')) return;
     
     const weekKey = getWeekKey(currentWeekStart);
@@ -732,6 +773,7 @@ function removeBonus() {
 }
 
 function clearWeek() {
+    if (!isAdministrator()) return;
     if (!confirm('¿SEGURO que quieres eliminar TODAS las tareas de esta semana? Esta acción no se puede deshacer.')) return;
     
     const weekKey = getWeekKey(currentWeekStart);
@@ -785,7 +827,7 @@ function addMoneyToPiggyBank(amount) {
 }
 
 function giveMoneyFromPiggyBank() {
-    if (currentUser !== 'super_usuario') return;
+    if (!isAdministrator()) return;
     
     const amount = prompt(`💰 La hucha tiene ${piggyBank.toFixed(2)}€\n\n¿Cuánto dinero quieres dar a Maria?\n(Se restará de la hucha)`);
     
@@ -811,7 +853,7 @@ function giveMoneyFromPiggyBank() {
 }
 
 function editPiggyBankAmount() {
-    if (currentUser !== 'super_usuario') return;
+    if (!isAdministrator()) return;
     
     const newAmount = prompt(`✏️ Editar cantidad de la hucha\n\nActual: ${piggyBank.toFixed(2)}€\n\n¿Cuánto dinero quieres que tenga la hucha?`);
     
@@ -833,7 +875,7 @@ function editPiggyBankAmount() {
 
 // ==================== RELLENAR SEMANA AUTOMÁTICAMENTE ====================
 function fillWeekAutomatically() {
-    if (currentUser !== 'super_usuario') return;
+    if (!isAdministrator()) return;
     
     if (!confirm('¿Quieres rellenar la semana con las tareas por defecto?\n\n⚠️ NO se borrarán las tareas existentes, solo se añadirán las que falten.')) {
         return;
@@ -864,7 +906,7 @@ function fillWeekAutomatically() {
                     description: task.description,
                     day: day,
                     status: 'pending',
-                    creator: 'super_usuario',
+                    creator: 'sargento',
                     createdAt: new Date().toISOString()
                 });
                 addedCount++;
@@ -882,7 +924,7 @@ function fillWeekAutomatically() {
                     description: task.description,
                     day: day,
                     status: 'pending',
-                    creator: 'super_usuario',
+                    creator: 'sargento',
                     createdAt: new Date().toISOString()
                 });
                 addedCount++;
@@ -899,7 +941,7 @@ function fillWeekAutomatically() {
                 description: task.description,
                 day: 5,
                 status: 'pending',
-                creator: 'super_usuario',
+                creator: 'sargento',
                 createdAt: new Date().toISOString()
             });
             addedCount++;

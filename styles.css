@@ -159,6 +159,30 @@ input:checked + .slider:before {
     transition: border-color 0.3s;
 }
 
+.login-form label {
+    display: block;
+    margin: 0 0 8px;
+    color: #4b5563;
+    font-weight: 700;
+    text-align: left;
+}
+
+.profile-select {
+    width: 100%;
+    padding: 15px 18px;
+    margin-bottom: 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    background: white;
+    color: #374151;
+    font-size: 17px;
+}
+
+.profile-select:focus {
+    outline: none;
+    border-color: #0ea5e9;
+}
+
 .password-input:focus {
     outline: none;
     border-color: #0ea5e9;
@@ -731,4 +755,47 @@ input:checked + .slider:before {
     .stitch-float {
         width: 70px;
     }
+}
+
+body.theme-serious {
+    background: linear-gradient(135deg, #111827 0%, #334155 55%, #475569 100%);
+}
+
+body.theme-serious .login-container,
+body.theme-serious .header,
+body.theme-serious .points-container,
+body.theme-serious .piggy-bank,
+body.theme-serious .week-controls,
+body.theme-serious .day-column {
+    border: 1px solid #dbe2ea;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+body.theme-serious .app-title,
+body.theme-serious .header h2,
+body.theme-serious .day-name,
+body.theme-serious #modalTitle {
+    color: #1e3a5f;
+    text-shadow: none;
+}
+
+body.theme-serious .btn-primary,
+body.theme-serious .add-task-btn {
+    background: #1e3a5f;
+}
+
+body.theme-serious .btn-week,
+body.theme-serious .btn-admin {
+    background: #475569;
+}
+
+body.theme-serious .stitch-container,
+body.theme-serious .floating-stitch,
+body.theme-serious .hucha-stitch-img {
+    display: none;
+}
+
+body.profile-guapito .piggy-bank-container,
+body.profile-guapito .points-container {
+    display: none;
 }
