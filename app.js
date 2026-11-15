@@ -1,5 +1,19 @@
 // ==================== CONFIGURACIÓN ====================
 const CONFIG = {
+    PROFILE_PASSWORDS: {
+        sargento: {
+            salt: '6ea7373cf946c616e2bdca3bfcf78cc4',
+            hash: '9631305fa9d4b68ee1468046f37d3be553fd33ac6a40dea5c09f5a2250215497'
+        },
+        guapito: {
+            salt: 'b906f7291ca06f93b89eb71ba7756e8a',
+            hash: 'd41a42bd9bf34b1b0d242bd3c89c2b80e31cee4c93c1438f1013d926930712af'
+        },
+        maria: {
+            salt: '9a3f48a9a0efb43aa837a3b09d2ac2ac',
+            hash: '8e4f2d016882f93d6881486a07a74b96c650fa4e1a45b25621c7e40a96419092'
+        }
+    },
     PASSWORD_FILE_NAME: 'maria_password.txt',
     DATABASE_FILE_NAME: 'tasks_database.json',
     PIGGY_BANK_FILE_NAME: 'piggy_bank.json',
@@ -145,10 +159,7 @@ function updateProfileTheme(profile) {
 }
 
 async function verifyProfilePassword(profile, password) {
-    const verifier = window.PROFILE_PASSWORDS && window.PROFILE_PASSWORDS[profile];
-    if (!verifier) {
-        throw new Error('Falta configurar la contraseña privada de este perfil en profile-passwords.js.');
-    }
+    const verifier = CONFIG.PROFILE_PASSWORDS[profile];
     if (!window.crypto?.subtle) {
         throw new Error('Este navegador no permite verificar la clave. Usa una versión reciente.');
     }

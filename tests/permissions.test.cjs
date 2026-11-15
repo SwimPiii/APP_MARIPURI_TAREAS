@@ -2,12 +2,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const { webcrypto } = require('node:crypto');
+const { TextEncoder } = require('node:util');
 const vm = require('node:vm');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const sandbox = {
     document: { addEventListener() {} },
-    window: {},
+    window: { crypto: webcrypto },
+    TextEncoder,
     console
 };
 
@@ -19,7 +22,8 @@ globalThis.taskPermissionTests = {
     getTaskAssignees,
     getTaskStatus,
     getNextTaskStatus,
-    setTaskStatus
+    setTaskStatus,
+    verifyProfilePassword
 };`, sandbox);
 
 const policy = sandbox.taskPermissionTests;
@@ -71,4 +75,8 @@ test('a personal task can be completed by its creator without Sargento confirmat
 
     policy.setCurrentUser('guapito');
     assert.equal(policy.getNextTaskStatus(task, 'guapito'), 'completed');
+});
+
+test('profile login uses its configured verifier without an external password file', async () => {
+    assert.equal(await policy.verifyProfilePassword('maria', 'invalid-test-password'), false);
 });

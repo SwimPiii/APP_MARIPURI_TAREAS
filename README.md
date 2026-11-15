@@ -28,7 +28,7 @@ Aplicación web compartida para gestionar tareas semanales de Maria, Guapito y S
 
 Los tres perfiles pueden crear tareas personales, visibles solo para su creador y para Sargento. Las tareas de Sargento antiguas que no tengan destinatarios se consideran asignadas a Maria.
 
-Los verificadores PBKDF2 se guardan en `profile-passwords.js`, excluido de Git junto con la configuración privada de Drive. Copia `profile-passwords.EXAMPLE.js` y añade los verificadores antes de usar la app. Como la app es estática y pública, estos permisos son controles de interfaz: no protegen realmente los datos y los perfiles pueden forzarse.
+Las claves se comprueban con verificadores PBKDF2. Como la app es estática y pública, esto solo sirve como control visual: no protege realmente los datos y los perfiles pueden forzarse.
 
 ## 📊 Sistema de Puntos
 
