@@ -414,6 +414,25 @@ input:checked + .slider:before {
     transform: translateX(5px);
 }
 
+.task-status-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.task-status-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.task-status-label {
+    min-width: 62px;
+    color: #6b7280;
+    font-size: 0.7em;
+}
+
 .task-status {
     width: 25px;
     height: 25px;
@@ -425,6 +444,12 @@ input:checked + .slider:before {
     font-size: 0.8em;
     font-weight: bold;
     cursor: pointer;
+    padding: 0;
+    border: 0;
+}
+
+.task-status:disabled {
+    cursor: default;
 }
 
 .task-status.pending {
@@ -535,6 +560,36 @@ input:checked + .slider:before {
 #taskForm textarea {
     min-height: 80px;
     resize: vertical;
+}
+
+.assignees-field {
+    margin: 0 0 15px;
+    padding: 10px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.assignees-field legend {
+    padding: 0 5px;
+    font-weight: bold;
+}
+
+.assignees-field label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+}
+
+#taskForm .assignees-field input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.assignees-field small {
+    display: block;
+    color: #6b7280;
+    margin-top: 8px;
 }
 
 .form-buttons {

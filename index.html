@@ -114,6 +114,13 @@
                         <option value="5">Sábado</option>
                         <option value="6">Domingo</option>
                     </select>
+                    <fieldset id="assigneesField" class="assignees-field" style="display: none;">
+                        <legend>Asignar tarea a</legend>
+                        <label><input type="checkbox" name="taskAssignee" value="maria"> Maria</label>
+                        <label><input type="checkbox" name="taskAssignee" value="guapito"> Guapito</label>
+                        <label><input type="checkbox" name="taskAssignee" value="sargento"> Sargento</label>
+                        <small>Selecciona una o varias personas. Para una tarea personal de Sargento, selecciona solo Sargento.</small>
+                    </fieldset>
                     <div class="form-buttons">
                         <button type="submit" class="btn-primary">Guardar</button>
                         <button type="button" id="cancelTaskBtn" class="btn-secondary">Cancelar</button>
@@ -133,6 +140,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="profile-passwords.js"></script>
     <script src="drive-config.js"></script>
     <script src="app.js"></script>
 </body>

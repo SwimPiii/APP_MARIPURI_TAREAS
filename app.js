@@ -1,20 +1,5 @@
 // ==================== CONFIGURACIÓN ====================
 const CONFIG = {
-    PROFILE_PASSWORDS: {
-        sargento: {
-            salt: '6ea7373cf946c616e2bdca3bfcf78cc4',
-            hash: '9631305fa9d4b68ee1468046f37d3be553fd33ac6a40dea5c09f5a2250215497'
-        },
-        guapito: {
-            salt: 'b906f7291ca06f93b89eb71ba7756e8a',
-            hash: 'd41a42bd9bf34b1b0d242bd3c89c2b80e31cee4c93c1438f1013d926930712af'
-        },
-        maria: {
-            salt: '9a3f48a9a0efb43aa837a3b09d2ac2ac',
-            hash: '8e4f2d016882f93d6881486a07a74b96c650fa4e1a45b25621c7e40a96419092'
-        }
-    },
-    DRIVE_FOLDER_ID: '1e5ebZ1haq0AFua98XBSe9lmUfOwjyHLT',
     PASSWORD_FILE_NAME: 'maria_password.txt',
     DATABASE_FILE_NAME: 'tasks_database.json',
     PIGGY_BANK_FILE_NAME: 'piggy_bank.json',
@@ -74,6 +59,73 @@ function isAdminTask(creator) {
     return creator === 'sargento' || creator === 'super_usuario';
 }
 
+function getTaskAssignees(task) {
+    const validProfiles = ['maria', 'guapito', 'sargento'];
+    if (Array.isArray(task.assignees)) {
+        return [...new Set(task.assignees.filter(profile => validProfiles.includes(profile)))];
+    }
+    if (isAdminTask(task.creator)) return ['maria'];
+    return validProfiles.includes(task.creator) ? [task.creator] : [];
+}
+
+function getTaskStatus(task, profile) {
+    const status = task.assigneeStatuses && task.assigneeStatuses[profile];
+    return ['pending', 'done', 'completed'].includes(status)
+        ? status
+        : (['pending', 'done', 'completed'].includes(task.status) ? task.status : 'pending');
+}
+
+function getVisibleTasks(tasks, profile = currentUser) {
+    if (profile === 'sargento') return tasks;
+    return tasks.filter(task => getTaskAssignees(task).includes(profile));
+}
+
+function canChangeTaskStatus(task, profile = currentUser, actor = currentUser) {
+    if (!getTaskAssignees(task).includes(profile)) return false;
+    if (actor === 'sargento') return true;
+    if (profile !== actor) return false;
+    if (isAdminTask(task.creator)) return getTaskStatus(task, profile) !== 'completed';
+    return task.creator === profile;
+}
+
+function getNextTaskStatus(task, profile, actor = currentUser) {
+    if (!canChangeTaskStatus(task, profile, actor)) return null;
+
+    const status = getTaskStatus(task, profile);
+    if (actor === 'sargento') {
+        return status === 'pending' ? 'done' : status === 'done' ? 'completed' : 'pending';
+    }
+    if (isAdminTask(task.creator)) {
+        return status === 'pending' ? 'done' : 'pending';
+    }
+    return status === 'completed' ? 'pending' : 'completed';
+}
+
+function setTaskStatus(task, profile, status) {
+    const assignees = getTaskAssignees(task);
+    task.assignees = assignees;
+    if (!task.assigneeStatuses || typeof task.assigneeStatuses !== 'object') {
+        task.assigneeStatuses = {};
+    }
+    assignees.forEach(assignee => {
+        if (!['pending', 'done', 'completed'].includes(task.assigneeStatuses[assignee])) {
+            task.assigneeStatuses[assignee] = ['pending', 'done', 'completed'].includes(task.status)
+                ? task.status
+                : 'pending';
+        }
+    });
+    task.assigneeStatuses[profile] = status;
+
+    const statuses = assignees.map(assignee => task.assigneeStatuses[assignee]);
+    task.status = statuses.length > 0 && statuses.every(value => value === 'completed')
+        ? 'completed'
+        : statuses.includes('done') ? 'done' : 'pending';
+}
+
+function isMariaRewardTask(task) {
+    return isAdminTask(task.creator) && getTaskAssignees(task).includes('maria');
+}
+
 function getProfileLabel(profile) {
     if (profile === 'sargento' || profile === 'super_usuario') return 'Sargento';
     if (profile === 'guapito') return 'Guapito';
@@ -93,8 +145,11 @@ function updateProfileTheme(profile) {
 }
 
 async function verifyProfilePassword(profile, password) {
-    const verifier = CONFIG.PROFILE_PASSWORDS[profile];
-    if (!verifier || !window.crypto?.subtle) {
+    const verifier = window.PROFILE_PASSWORDS && window.PROFILE_PASSWORDS[profile];
+    if (!verifier) {
+        throw new Error('Falta configurar la contraseña privada de este perfil en profile-passwords.js.');
+    }
+    if (!window.crypto?.subtle) {
         throw new Error('Este navegador no permite verificar la clave. Usa una versión reciente.');
     }
 
@@ -450,7 +505,7 @@ function renderCalendar() {
         taskList.id = `taskList-${i}`;
         
         // Filtrar tareas del día
-        const dayTasks = weekData.tasks.filter(task => task.day === i);
+        const dayTasks = getVisibleTasks(weekData.tasks, currentUser).filter(task => task.day === i);
         dayTasks.forEach(task => {
             const taskElement = createTaskElement(task, weekKey);
             taskList.appendChild(taskElement);
@@ -466,22 +521,34 @@ function createTaskElement(task, weekKey) {
     const taskItem = document.createElement('div');
     taskItem.className = 'task-item';
     
-    // Estado de la tarea
-    const statusCircle = document.createElement('div');
-    statusCircle.className = `task-status ${task.status}`;
-    
-    if (task.status === 'pending') {
-        statusCircle.textContent = '○';
-    } else if (task.status === 'done') {
-        statusCircle.textContent = '◐';
-    } else {
-        statusCircle.textContent = '●';
-    }
-    
-    // Click en el círculo para cambiar estado
-    statusCircle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        changeTaskStatus(task, weekKey);
+    const assignees = getTaskAssignees(task);
+    const statusControls = document.createElement('div');
+    statusControls.className = 'task-status-controls';
+    const visibleAssignees = isAdministrator() ? assignees : [currentUser];
+    visibleAssignees.forEach(profile => {
+        const status = getTaskStatus(task, profile);
+        const statusRow = document.createElement('div');
+        statusRow.className = 'task-status-row';
+
+        if (isAdministrator()) {
+            const assigneeLabel = document.createElement('span');
+            assigneeLabel.className = 'task-status-label';
+            assigneeLabel.textContent = getProfileLabel(profile);
+            statusRow.appendChild(assigneeLabel);
+        }
+
+        const statusButton = document.createElement('button');
+        statusButton.type = 'button';
+        statusButton.className = `task-status ${status}`;
+        statusButton.textContent = status === 'pending' ? '○' : status === 'done' ? '◐' : '●';
+        statusButton.setAttribute('aria-label', `${getProfileLabel(profile)}: ${status}`);
+        statusButton.disabled = !canChangeTaskStatus(task, profile);
+        statusButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            changeTaskStatus(task, weekKey, profile);
+        });
+        statusRow.appendChild(statusButton);
+        statusControls.appendChild(statusRow);
     });
     
     // Contenido de la tarea
@@ -503,14 +570,17 @@ function createTaskElement(task, weekKey) {
     
     const taskCreator = document.createElement('div');
     taskCreator.className = 'task-creator';
-    taskCreator.textContent = `Creada por ${getProfileLabel(task.creator)}`;
+    const assigneeNames = assignees.map(getProfileLabel).join(', ');
+    taskCreator.textContent = isAdminTask(task.creator)
+        ? `Para: ${assigneeNames} · Creada por ${getProfileLabel(task.creator)}`
+        : `Personal · Creada por ${getProfileLabel(task.creator)}`;
     taskContent.appendChild(taskCreator);
     
     // Acciones
     const taskActions = document.createElement('div');
     taskActions.className = 'task-actions';
     
-    const canDelete = isAdministrator() || task.creator === currentUser;
+    const canDelete = isAdministrator() || (task.creator === currentUser && !isAdminTask(task.creator));
     
     if (canDelete) {
         const deleteBtn = document.createElement('button');
@@ -523,7 +593,7 @@ function createTaskElement(task, weekKey) {
         taskActions.appendChild(deleteBtn);
     }
     
-    taskItem.appendChild(statusCircle);
+    taskItem.appendChild(statusControls);
     taskItem.appendChild(taskContent);
     taskItem.appendChild(taskActions);
     
@@ -542,8 +612,8 @@ function updateProgressBar() {
     const weekKey = getWeekKey(currentWeekStart);
     const weekData = tasksDatabase[weekKey] || { tasks: [], bonus: 0 };
     
-    const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
-    const completedTasks = superUserTasks.filter(t => t.status === 'completed');
+    const superUserTasks = weekData.tasks.filter(isMariaRewardTask);
+    const completedTasks = superUserTasks.filter(t => getTaskStatus(t, 'maria') === 'completed');
     
     let totalEuros = 0;
     
@@ -565,8 +635,8 @@ function updateProgressBar() {
         `${totalEuros.toFixed(2)}€ / ${maxEuros.toFixed(2)}€`;
     
     // Actualizar mensaje de bonus
-    const allCompleted = superUserTasks.length > 0 && 
-                        superUserTasks.every(t => t.status === 'completed');
+    const allCompleted = superUserTasks.length > 0 &&
+                        superUserTasks.every(t => getTaskStatus(t, 'maria') === 'completed');
     
     const bonusText = document.getElementById('bonusText');
     if (allCompleted && weekData.bonus === 0 && isAdministrator()) {
@@ -593,6 +663,10 @@ function openTaskModal(dayIndex) {
     document.getElementById('taskTitle').value = '';
     document.getElementById('taskDescription').value = '';
     document.getElementById('taskDay').value = dayIndex;
+    document.querySelectorAll('input[name="taskAssignee"]').forEach(input => {
+        input.checked = input.value === 'sargento';
+    });
+    document.getElementById('assigneesField').style.display = isAdministrator() ? 'block' : 'none';
     
     // Mostrar/ocultar descripción según usuario
     const descriptionField = document.getElementById('taskDescription');
@@ -624,6 +698,14 @@ function handleTaskSubmit(e) {
     
     if (!title) return;
     
+    const assignees = isAdministrator()
+        ? Array.from(document.querySelectorAll('input[name="taskAssignee"]:checked'), input => input.value)
+        : [currentUser];
+    if (assignees.length === 0) {
+        alert('Selecciona al menos una persona para la tarea.');
+        return;
+    }
+
     const weekKey = getWeekKey(currentWeekStart);
     
     if (!tasksDatabase[weekKey]) {
@@ -637,6 +719,8 @@ function handleTaskSubmit(e) {
         day,
         status: 'pending',
         creator: currentUser,
+        assignees,
+        assigneeStatuses: Object.fromEntries(assignees.map(profile => [profile, 'pending'])),
         createdAt: new Date().toISOString()
     };
     
@@ -647,51 +731,24 @@ function handleTaskSubmit(e) {
     renderCalendar();
 }
 
-function changeTaskStatus(task, weekKey) {
+function changeTaskStatus(task, weekKey, profile = currentUser) {
     const weekData = tasksDatabase[weekKey];
+    if (!weekData || !canChangeTaskStatus(task, profile)) return;
     const taskIndex = weekData.tasks.findIndex(t => t.id === task.id);
     
     if (taskIndex === -1) return;
     
     const currentTask = weekData.tasks[taskIndex];
-    const previousStatus = currentTask.status;
-    
-    // Lógica de cambio de estado
-    if (isAdministrator()) {
-        if (currentTask.status === 'pending') {
-            currentTask.status = 'done';
-        } else if (currentTask.status === 'done') {
-            currentTask.status = 'completed';
-            
-            if (isAdminTask(currentTask.creator)) {
-                const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
-                const eurosPerTask = CONFIG.POINTS_PER_EURO / superUserTasks.length;
-                addMoneyToPiggyBank(eurosPerTask);
-            }
-        } else {
-            currentTask.status = 'pending';
-            
-            // Si se pasa de completed a pending, restar dinero de la hucha
-            if (previousStatus === 'completed' && isAdminTask(currentTask.creator)) {
-                const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
-                const eurosPerTask = CONFIG.POINTS_PER_EURO / superUserTasks.length;
-                addMoneyToPiggyBank(-eurosPerTask);
-            }
-        }
-    } else {
-        if (currentTask.creator === currentUser) {
-            if (currentTask.status === 'pending') {
-                currentTask.status = 'completed';
-            } else {
-                currentTask.status = 'pending';
-            }
-        } else if (isAdminTask(currentTask.creator)) {
-            if (currentTask.status === 'pending') {
-                currentTask.status = 'done';
-            } else if (currentTask.status === 'done') {
-                currentTask.status = 'pending';
-            }
-        }
+    const previousStatus = getTaskStatus(currentTask, profile);
+    const nextStatus = getNextTaskStatus(currentTask, profile);
+    if (!nextStatus) return;
+    setTaskStatus(currentTask, profile, nextStatus);
+
+    if (isMariaRewardTask(currentTask) && profile === 'maria' && nextStatus !== previousStatus) {
+        const rewardTasks = weekData.tasks.filter(isMariaRewardTask);
+        const eurosPerTask = rewardTasks.length > 0 ? CONFIG.POINTS_PER_EURO / rewardTasks.length : 0;
+        if (nextStatus === 'completed') addMoneyToPiggyBank(eurosPerTask);
+        if (previousStatus === 'completed') addMoneyToPiggyBank(-eurosPerTask);
     }
     
     saveLocalDatabase();
@@ -699,6 +756,7 @@ function changeTaskStatus(task, weekKey) {
 }
 
 function deleteTask(task, weekKey) {
+    if (!isAdministrator() && (task.creator !== currentUser || isAdminTask(task.creator))) return;
     if (!confirm('¿Seguro que quieres eliminar esta tarea?')) return;
     
     const weekData = tasksDatabase[weekKey];
@@ -714,9 +772,9 @@ function addBonus() {
     const weekKey = getWeekKey(currentWeekStart);
     const weekData = tasksDatabase[weekKey] || { tasks: [], bonus: 0 };
     
-    const superUserTasks = weekData.tasks.filter(t => isAdminTask(t.creator));
-    const allCompleted = superUserTasks.length > 0 && 
-                        superUserTasks.every(t => t.status === 'completed');
+    const superUserTasks = weekData.tasks.filter(isMariaRewardTask);
+    const allCompleted = superUserTasks.length > 0 &&
+                        superUserTasks.every(t => getTaskStatus(t, 'maria') === 'completed');
     
     if (!allCompleted) {
         alert('⚠️ No se puede otorgar bonificación. Aún hay tareas pendientes o sin completar.');
@@ -907,6 +965,8 @@ function fillWeekAutomatically() {
                     day: day,
                     status: 'pending',
                     creator: 'sargento',
+                    assignees: ['maria'],
+                    assigneeStatuses: { maria: 'pending' },
                     createdAt: new Date().toISOString()
                 });
                 addedCount++;
@@ -925,6 +985,8 @@ function fillWeekAutomatically() {
                     day: day,
                     status: 'pending',
                     creator: 'sargento',
+                    assignees: ['maria'],
+                    assigneeStatuses: { maria: 'pending' },
                     createdAt: new Date().toISOString()
                 });
                 addedCount++;
@@ -942,6 +1004,8 @@ function fillWeekAutomatically() {
                 day: 5,
                 status: 'pending',
                 creator: 'sargento',
+                assignees: ['maria'],
+                assigneeStatuses: { maria: 'pending' },
                 createdAt: new Date().toISOString()
             });
             addedCount++;
@@ -981,19 +1045,22 @@ function showUpcomingTasks() {
         const weekStartDate = new Date(weekKey);
         const data = tasksDatabase[weekKey];
         if (!data || !data.tasks) return;
-        data.tasks.forEach(task => {
+        getVisibleTasks(data.tasks, currentUser).forEach(task => {
             if (AUTO_TITLES_EXCLUDE.has(task.title)) return;
-            // Solo próximas (pendientes o done), no completed
-            if (task.status === 'completed') return;
             const taskDate = new Date(weekStartDate);
             taskDate.setDate(weekStartDate.getDate() + task.day);
             const diffDays = Math.ceil((taskDate - today) / MS_PER_DAY);
             if (diffDays >= 0) {
-                items.push({
-                    title: task.title,
-                    dayName: getDayName(task.day),
-                    date: taskDate,
-                    daysLeft: diffDays
+                const profiles = isAdministrator() ? getTaskAssignees(task) : [currentUser];
+                profiles.forEach(profile => {
+                    if (getTaskStatus(task, profile) === 'completed') return;
+                    items.push({
+                        title: task.title,
+                        assignee: profile,
+                        dayName: getDayName(task.day),
+                        date: taskDate,
+                        daysLeft: diffDays
+                    });
                 });
             }
         });
@@ -1012,7 +1079,9 @@ function showUpcomingTasks() {
             row.style.alignItems = 'center';
             row.style.padding = '8px 0';
             const left = document.createElement('div');
-            left.textContent = `${item.dayName} - ${item.title}`;
+            left.textContent = isAdministrator()
+                ? `${item.dayName} - ${item.title} (${getProfileLabel(item.assignee)})`
+                : `${item.dayName} - ${item.title}`;
             const right = document.createElement('div');
             right.textContent = `${item.daysLeft} días`;
             right.style.color = '#22c55e';

@@ -1,5 +1,6 @@
 # Archivos de configuración sensibles
 drive-config.js
+profile-passwords.js
 client_secrets.json
 config.js
 
